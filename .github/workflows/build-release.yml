@@ -24,12 +24,12 @@ jobs:
       uses: actions/checkout@v4
       
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ env.PYTHON_VERSION }}
         
     - name: Cache pip dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~\AppData\Local\pip\Cache
         key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
@@ -67,7 +67,7 @@ jobs:
         }
         
     - name: Upload executable artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: excella-executable
         path: dist/Excella/
@@ -82,17 +82,21 @@ jobs:
       uses: actions/checkout@v4
       
     - name: Download executable artifact
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: excella-executable
         path: dist/Excella/
         
     - name: Install Inno Setup
       run: |
-        $url = "https://jrsoftware.org/download.php/is.exe"
+        # Download and install Inno Setup 6
+        $url = "https://files.jrsoftware.org/is/6/innosetup-6.3.3.exe"
         $output = "$env:TEMP\innosetup.exe"
-        Invoke-WebRequest -Uri $url -OutFile $output
+        Write-Host "Downloading Inno Setup..."
+        Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
+        Write-Host "Installing Inno Setup..."
         Start-Process -FilePath $output -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+        Write-Host "Inno Setup installation completed"
         
     - name: Add Inno Setup to PATH
       run: |
@@ -100,7 +104,15 @@ jobs:
         if (-not (Test-Path $innoPath)) {
           $innoPath = "${env:ProgramFiles}\Inno Setup 6"
         }
-        echo $innoPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        if (Test-Path $innoPath) {
+          Write-Host "Adding Inno Setup to PATH: $innoPath"
+          echo $innoPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        } else {
+          Write-Host "Inno Setup installation directory not found"
+          Get-ChildItem "${env:ProgramFiles(x86)}" -Filter "*Inno*" -ErrorAction SilentlyContinue
+          Get-ChildItem "${env:ProgramFiles}" -Filter "*Inno*" -ErrorAction SilentlyContinue
+          exit 1
+        }
         
     - name: Create missing files for installer
       run: |
@@ -118,28 +130,96 @@ jobs:
           "# Excella dependencies" | Out-File -FilePath "requirements.txt" -Encoding utf8
         }
         
+        # Create a basic Inno Setup script if it doesn't exist
+        if (-not (Test-Path "excella_setup.iss")) {
+          Write-Host "Creating basic Inno Setup script"
+          @"
+[Setup]
+AppName=Excella
+AppVersion=1.0
+DefaultDirName={pf}\Excella
+DefaultGroupName=Excella
+OutputDir=installer
+OutputBaseFilename=ExcellaSetup
+Compression=lzma
+SolidCompression=yes
+SetupIconFile=icon.ico
+
+[Files]
+Source: "dist\Excella\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Icons]
+Name: "{group}\Excella"; Filename: "{app}\Excella.exe"
+Name: "{commondesktop}\Excella"; Filename: "{app}\Excella.exe"; Tasks: desktopicon
+
+[Tasks]
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+"@ | Out-File -FilePath "excella_setup.iss" -Encoding utf8
+        }
+        
     - name: Build installer
       run: |
+        Write-Host "Current directory contents:"
+        Get-ChildItem -Force
+        Write-Host "Dist directory contents:"
+        Get-ChildItem "dist" -Recurse -Force -ErrorAction SilentlyContinue
+        
         if (Test-Path "build_installer.bat") {
+          Write-Host "Running build_installer.bat"
           .\build_installer.bat
         } else {
           Write-Host "build_installer.bat not found, running Inno Setup directly"
-          iscc excella_setup.iss
+          Write-Host "Checking if ISCC is available..."
+          try {
+            $isccPath = Get-Command iscc -ErrorAction Stop
+            Write-Host "ISCC found at: $($isccPath.Source)"
+          } catch {
+            Write-Host "ISCC not found in PATH, searching..."
+            $isccPath = Get-ChildItem -Path "${env:ProgramFiles(x86)}\Inno Setup 6", "${env:ProgramFiles}\Inno Setup 6" -Filter "iscc.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($isccPath) {
+              Write-Host "Found ISCC at: $($isccPath.FullName)"
+              & $isccPath.FullName "excella_setup.iss"
+            } else {
+              Write-Host "ISCC not found"
+              exit 1
+            }
+          }
+          if ($isccPath -and $isccPath.Source) {
+            & $isccPath.Source "excella_setup.iss"
+          } else {
+            iscc "excella_setup.iss"
+          }
         }
         
     - name: Verify installer creation
       run: |
+        Write-Host "Checking installer directory..."
+        if (Test-Path "installer") {
+          Get-ChildItem "installer" -Force
+        }
+        
         if (Test-Path "installer\*.exe") {
           Write-Host "✓ Installer built successfully"
           Get-ChildItem "installer\" -Filter "*.exe"
         } else {
-          Write-Host "✗ Installer not found"
-          Get-ChildItem "." -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue
-          exit 1
+          Write-Host "✗ Installer not found in installer directory"
+          Write-Host "Searching for .exe files in current directory..."
+          Get-ChildItem "." -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "Found: $($_.FullName)"
+          }
+          
+          # Check if installer was created in root directory
+          if (Test-Path "*.exe") {
+            Write-Host "Found installer in root directory, moving to installer folder"
+            New-Item -ItemType Directory -Force -Path "installer"
+            Move-Item "*.exe" "installer/"
+          } else {
+            exit 1
+          }
         }
         
     - name: Upload installer artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: excella-installer
         path: installer/*.exe
@@ -155,13 +235,13 @@ jobs:
       uses: actions/checkout@v4
       
     - name: Download installer artifact
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: excella-installer
         path: installer/
         
     - name: Download executable artifact
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: excella-executable
         path: executable/
@@ -186,7 +266,7 @@ jobs:
         }
         
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ steps.release_info.outputs.tag }}
         name: Excella ${{ steps.release_info.outputs.version }}
@@ -224,7 +304,7 @@ jobs:
     
     steps:
     - name: Download installer artifact
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: excella-installer
         path: installer/
