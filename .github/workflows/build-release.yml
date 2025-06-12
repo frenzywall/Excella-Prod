@@ -188,7 +188,7 @@ jobs:
             installer/*.exe
             Excella_Portable_${{ github.ref_name }}.zip
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TOKEN_LOL: ${{ secrets.TOKEN_LOL }}
 
   test-installer:
     needs: build-installer
