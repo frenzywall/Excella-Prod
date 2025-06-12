@@ -133,7 +133,7 @@ jobs:
         # Create a basic Inno Setup script if it doesn't exist
         if (-not (Test-Path "excella_setup.iss")) {
           Write-Host "Creating basic Inno Setup script"
-          @"
+          $issContent = @"
 [Setup]
 AppName=Excella
 AppVersion=1.0
@@ -154,7 +154,8 @@ Name: "{commondesktop}\Excella"; Filename: "{app}\Excella.exe"; Tasks: desktopic
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-"@ | Out-File -FilePath "excella_setup.iss" -Encoding utf8
+"@
+          $issContent | Out-File -FilePath "excella_setup.iss" -Encoding utf8
         }
         
     - name: Build installer
