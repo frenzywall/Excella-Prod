@@ -1,0 +1,27 @@
+# Excel File Comparison Tool - Requirements
+# Install with: pip install -r requirements.txt
+
+# Core data manipulation and analysis
+pandas>=2.3.0            # Powerful data analysis library (Released: 2025-03-12)
+
+# Excel file reading engines
+openpyxl>=3.1.4          # Read/write .xlsx/.xlsm files (Released: 2023-10-18)
+xlrd>=2.0.1              # Read legacy .xls files (Released: 2020-12-10)
+pyxlsb>=1.0.10           #  Read binary Excel .xlsb files (Released: 2022-05-13)
+
+# String matching and fuzzy logic
+fuzzywuzzy>=0.18.0           # Fuzzy string matching (Released: 2020-11-10)
+python-Levenshtein>=0.25.1   # Accelerates fuzzywuzzy (Released: 2024-11-27)
+
+# Optional: Enhanced Excel writing capabilities
+XlsxWriter>=3.2.0        # Alternative Excel writer (Released: 2024-10-21)
+
+# Optional: For better performance with large files
+pyarrow>=16.1.0          # High-performance I/O operations (Released: 2024-04-15)
+
+# Windows-specific (optional)
+pywin32>=310             # Excel/COM integration for Windows (Released: 2023-09-18)
+
+# Add packaging for version checks
+packaging>=23.2          # Version parsing and comparison (Required for app.py)
+odfpy==1.4.1
