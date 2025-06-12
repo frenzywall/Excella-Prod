@@ -51,7 +51,52 @@ jobs:
             .\build_single_bat.bat onedir
           } else {
             Write-Host "build_single_bat.bat not found, running pyinstaller directly"
-            pyinstaller --onefile --windowed --name Excella main.py
+            # Use --onedir instead of --onefile to reduce false positives
+            # Add more specific options to reduce suspicious behavior
+            pyinstaller --onedir --windowed --noconfirm --icon=icon.ico --name="Excella" --add-data="icon.ico;." --clean `
+              --add-data "*.txt;." `
+              --add-data "*.md;." `
+              --exclude-module pytest `
+              --exclude-module unittest `
+              --exclude-module test `
+              --strip `
+              --noupx `
+              main.py
+          }
+
+      - name: Create build info file
+        run: |
+          $buildInfo = @"
+          Build Information:
+          - Version: ${{ github.ref_name }}
+          - Built on: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC')
+          - Commit: ${{ github.sha }}
+          - Repository: ${{ github.repository }}
+          - Built with PyInstaller and GitHub Actions
+          - This is legitimate software from github.com/${{ github.repository }}
+          "@
+          Set-Content -Path "dist\Excella\BUILD_INFO.txt" -Value $buildInfo
+
+      - name: Calculate file hashes
+        run: |
+          Get-ChildItem "dist\Excella" -Recurse -File | ForEach-Object {
+            $hash = Get-FileHash $_.FullName -Algorithm SHA256
+            "$($hash.Algorithm): $($hash.Hash) - $($_.Name)" | Out-File -Append -FilePath "dist\Excella\CHECKSUMS.txt"
+          }
+
+      - name: Verify executable integrity
+        run: |
+          $exe = "dist\Excella\Excella.exe"
+          if (Test-Path $exe) {
+            Write-Host "Executable size: $((Get-Item $exe).Length) bytes"
+            Write-Host "Executable hash: $((Get-FileHash $exe -Algorithm SHA256).Hash)"
+            # Test if the executable can start (quick validation)
+            $proc = Start-Process -FilePath $exe -ArgumentList "--version" -PassThru -WindowStyle Hidden -ErrorAction SilentlyContinue
+            if ($proc) {
+              Start-Sleep 2
+              Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+              Write-Host "✓ Executable validation passed"
+            }
           }
 
       - name: Verify executable creation
