@@ -41,7 +41,7 @@ if exist dist rmdir /s /q dist
 if exist __pycache__ rmdir /s /q __pycache__
 if exist Excella.spec del /q Excella.spec
 
-:: Set PyInstaller flags
+:: Set PyInstaller flags.
 set BUILD_FLAGS=--noconfirm --windowed --icon=icon.ico --name="Excella" --add-data="icon.ico;."
 
 if /I "%BUILD_TYPE%"=="onefile" (
