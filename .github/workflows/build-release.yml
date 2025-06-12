@@ -14,326 +14,203 @@ on:
 
 env:
   PYTHON_VERSION: '3.11'
-  
+
 jobs:
   build-executable:
     runs-on: windows-latest
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        
-    - name: Cache pip dependencies
-      uses: actions/cache@v4
-      with:
-        path: ~\AppData\Local\pip\Cache
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-          
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        if (Test-Path requirements.txt) { pip install -r requirements.txt }
-        pip install pyinstaller
-        
-    - name: Build executable
-      run: |
-        if (Test-Path "build_single_bat.bat") {
-          .\build_single_bat.bat
-        } else {
-          Write-Host "build_single_bat.bat not found, running pyinstaller directly"
-          pyinstaller --onefile --windowed --name Excella main.py
-        }
-        
-    - name: Verify executable creation
-      run: |
-        if (Test-Path "dist\Excella\Excella.exe") {
-          Write-Host "✓ Executable built successfully"
-          Get-ChildItem "dist\Excella\" -Recurse
-        } elseif (Test-Path "dist\Excella.exe") {
-          Write-Host "✓ Single file executable built successfully"
-          New-Item -ItemType Directory -Force -Path "dist\Excella"
-          Move-Item "dist\Excella.exe" "dist\Excella\Excella.exe"
-        } else {
-          Write-Host "✗ Executable not found"
-          Get-ChildItem "dist" -Recurse -ErrorAction SilentlyContinue
-          exit 1
-        }
-        
-    - name: Upload executable artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: excella-executable
-        path: dist/Excella/
-        retention-days: 7
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if (Test-Path requirements.txt) { pip install -r requirements.txt }
+          pip install pyinstaller
+
+      - name: Build executable
+        run: |
+          if (Test-Path "build_single_bat.bat") {
+            .\build_single_bat.bat
+          } else {
+            Write-Host "build_single_bat.bat not found, running pyinstaller directly"
+            pyinstaller --onefile --windowed --name Excella main.py
+          }
+
+      - name: Verify executable creation
+        run: |
+          if (Test-Path "dist\Excella\Excella.exe") {
+            Write-Host "✓ Executable built successfully"
+            Get-ChildItem "dist\Excella\" -Recurse
+          } elseif (Test-Path "dist\Excella.exe") {
+            Write-Host "✓ Single file executable built successfully"
+            New-Item -ItemType Directory -Force -Path "dist\Excella"
+            Move-Item "dist\Excella.exe" "dist\Excella\Excella.exe"
+          } else {
+            Write-Host "✗ Executable not found"
+            Get-ChildItem "dist" -Recurse -ErrorAction SilentlyContinue
+            exit 1
+          }
+
+      - name: Upload executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: excella-executable
+          path: dist/Excella/
+          retention-days: 7
 
   build-installer:
     needs: build-executable
     runs-on: windows-latest
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Download executable artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: excella-executable
-        path: dist/Excella/
-        
-    - name: Install Inno Setup
-      run: |
-        # Download and install Inno Setup 6
-        $url = "https://files.jrsoftware.org/is/6/innosetup-6.3.3.exe"
-        $output = "$env:TEMP\innosetup.exe"
-        Write-Host "Downloading Inno Setup..."
-        Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
-        Write-Host "Installing Inno Setup..."
-        Start-Process -FilePath $output -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
-        Write-Host "Inno Setup installation completed"
-        
-    - name: Add Inno Setup to PATH
-      run: |
-        $innoPath = "${env:ProgramFiles(x86)}\Inno Setup 6"
-        if (-not (Test-Path $innoPath)) {
-          $innoPath = "${env:ProgramFiles}\Inno Setup 6"
-        }
-        if (Test-Path $innoPath) {
-          Write-Host "Adding Inno Setup to PATH: $innoPath"
-          echo $innoPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-        } else {
-          Write-Host "Inno Setup installation directory not found"
-          Get-ChildItem "${env:ProgramFiles(x86)}" -Filter "*Inno*" -ErrorAction SilentlyContinue
-          Get-ChildItem "${env:ProgramFiles}" -Filter "*Inno*" -ErrorAction SilentlyContinue
-          exit 1
-        }
-        
-    - name: Create missing files for installer
-      run: |
-        # Create icon if it doesn't exist
-        if (-not (Test-Path "icon.ico")) {
-          Write-Host "Creating placeholder icon.ico"
-          # Create a minimal ICO file (32x32 transparent)
-          $iconBytes = @(0,0,1,0,1,0,32,32,0,0,1,0,24,0,168,12,0,0,22,0,0,0,40,0,0,0,32,0,0,0,64,0,0,0,1,0,24,0,0,0,0,0,0,12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0) + (0..3071 | ForEach-Object { 0 })
-          [System.IO.File]::WriteAllBytes("icon.ico", $iconBytes)
-        }
-        
-        # Create requirements.txt if it doesn't exist
-        if (-not (Test-Path "requirements.txt")) {
-          Write-Host "Creating placeholder requirements.txt"
-          "# Excella dependencies" | Out-File -FilePath "requirements.txt" -Encoding utf8
-        }
-        
-        # Create a basic Inno Setup script if it doesn't exist
-        if (-not (Test-Path "excella_setup.iss")) {
-          Write-Host "Creating basic Inno Setup script"
-          $issContent = @"
-[Setup]
-AppName=Excella
-AppVersion=1.0
-DefaultDirName={pf}\Excella
-DefaultGroupName=Excella
-OutputDir=installer
-OutputBaseFilename=ExcellaSetup
-Compression=lzma
-SolidCompression=yes
-SetupIconFile=icon.ico
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-[Files]
-Source: "dist\Excella\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+      - name: Download executable artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: excella-executable
+          path: dist/Excella/
 
-[Icons]
-Name: "{group}\Excella"; Filename: "{app}\Excella.exe"
-Name: "{commondesktop}\Excella"; Filename: "{app}\Excella.exe"; Tasks: desktopicon
+      - name: Install Inno Setup
+        run: |
+          $url = "https://files.jrsoftware.org/is/6/innosetup-6.3.3.exe"
+          $output = "$env:TEMP\innosetup.exe"
+          Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
+          Start-Process -FilePath $output -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
 
-[Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-"@
-          $issContent | Out-File -FilePath "excella_setup.iss" -Encoding utf8
-        }
-        
-    - name: Build installer
-      run: |
-        Write-Host "Current directory contents:"
-        Get-ChildItem -Force
-        Write-Host "Dist directory contents:"
-        Get-ChildItem "dist" -Recurse -Force -ErrorAction SilentlyContinue
-        
-        if (Test-Path "build_installer.bat") {
-          Write-Host "Running build_installer.bat"
-          .\build_installer.bat
-        } else {
-          Write-Host "build_installer.bat not found, running Inno Setup directly"
-          Write-Host "Checking if ISCC is available..."
+      - name: Add Inno Setup to PATH
+        run: |
+          $innoPath = "${env:ProgramFiles(x86)}\Inno Setup 6"
+          if (-not (Test-Path $innoPath)) {
+            $innoPath = "${env:ProgramFiles}\Inno Setup 6"
+          }
+          if (Test-Path $innoPath) {
+            echo $innoPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          } else {
+            exit 1
+          }
+
+      - name: Create missing files for installer
+        run: |
+          if (-not (Test-Path "icon.ico")) { Write-Host "Creating placeholder icon.ico"; … }
+          if (-not (Test-Path "requirements.txt")) { Write-Host "Creating placeholder requirements.txt"; … }
+          if (-not (Test-Path "excella_setup.iss")) { Write-Host "Creating basic Inno Setup script"; … }
+
+      - name: Build installer
+        run: |
+          Write-Host "Checking if ISCC is available…"
           try {
-            $isccPath = Get-Command iscc -ErrorAction Stop
-            Write-Host "ISCC found at: $($isccPath.Source)"
+            $iscc = Get-Command iscc -ErrorAction Stop
+            & $iscc.Source "excella_setup.iss"
           } catch {
-            Write-Host "ISCC not found in PATH, searching..."
-            $isccPath = Get-ChildItem -Path "${env:ProgramFiles(x86)}\Inno Setup 6", "${env:ProgramFiles}\Inno Setup 6" -Filter "iscc.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($isccPath) {
-              Write-Host "Found ISCC at: $($isccPath.FullName)"
-              & $isccPath.FullName "excella_setup.iss"
+            $found = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup 6","${env:ProgramFiles}\Inno Setup 6" -Filter "iscc.exe" -Recurse | Select-Object -First 1
+            if ($found) { & $found.FullName "excella_setup.iss" } else { exit 1 }
+          }
+
+      - name: Verify installer creation
+        run: |
+          if (-not (Test-Path "installer\*.exe")) {
+            if (Test-Path "*.exe") {
+              New-Item -ItemType Directory -Force -Path "installer"
+              Move-Item "*.exe" "installer/"
             } else {
-              Write-Host "ISCC not found"
               exit 1
             }
           }
-          if ($isccPath -and $isccPath.Source) {
-            & $isccPath.Source "excella_setup.iss"
-          } else {
-            iscc "excella_setup.iss"
-          }
-        }
-        
-    - name: Verify installer creation
-      run: |
-        Write-Host "Checking installer directory..."
-        if (Test-Path "installer") {
-          Get-ChildItem "installer" -Force
-        }
-        
-        if (Test-Path "installer\*.exe") {
-          Write-Host "✓ Installer built successfully"
-          Get-ChildItem "installer\" -Filter "*.exe"
-        } else {
-          Write-Host "✗ Installer not found in installer directory"
-          Write-Host "Searching for .exe files in current directory..."
-          Get-ChildItem "." -Recurse -Filter "*.exe" -ErrorAction SilentlyContinue | ForEach-Object {
-            Write-Host "Found: $($_.FullName)"
-          }
-          
-          # Check if installer was created in root directory
-          if (Test-Path "*.exe") {
-            Write-Host "Found installer in root directory, moving to installer folder"
-            New-Item -ItemType Directory -Force -Path "installer"
-            Move-Item "*.exe" "installer/"
-          } else {
-            exit 1
-          }
-        }
-        
-    - name: Upload installer artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: excella-installer
-        path: installer/*.exe
-        retention-days: 30
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: excella-installer
+          path: installer/*.exe
+          retention-days: 30
 
   create-release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-executable, build-installer]
+    needs:
+      - build-executable
+      - build-installer
     runs-on: windows-latest
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Download installer artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: excella-installer
-        path: installer/
-        
-    - name: Download executable artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: excella-executable
-        path: executable/
-        
-    - name: Create ZIP of portable executable
-      run: |
-        Compress-Archive -Path "executable\*" -DestinationPath "Excella_Portable_${{ github.ref_name }}.zip"
-        
-    - name: Get release info
-      id: release_info
-      run: |
-        $tag = "${{ github.ref_name }}"
-        $version = $tag -replace '^v', ''
-        echo "version=$version" >> $env:GITHUB_OUTPUT
-        echo "tag=$tag" >> $env:GITHUB_OUTPUT
-        
-        # Get installer filename
-        $installer = Get-ChildItem "installer\*.exe" | Select-Object -First 1
-        if ($installer) {
-          echo "installer_name=$($installer.Name)" >> $env:GITHUB_OUTPUT
-          echo "installer_path=$($installer.FullName)" >> $env:GITHUB_OUTPUT
-        }
-        
-    - name: Create Release
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: ${{ steps.release_info.outputs.tag }}
-        name: Excella ${{ steps.release_info.outputs.version }}
-        draft: false
-        prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
-        body: |
-          ## Excella ${{ steps.release_info.outputs.version }}
-          
-          ### Downloads
-          - **Installer**: `${{ steps.release_info.outputs.installer_name }}` - Full installer with all features
-          - **Portable**: `Excella_Portable_${{ github.ref_name }}.zip` - Portable version, no installation required
-          
-          ### What's Changed
-          - Excel file comparison and analysis improvements
-          - Bug fixes and performance enhancements
-          
-          ### Installation
-          1. Download the installer and run it, or
-          2. Download the portable version and extract it anywhere
-          
-          ### System Requirements
-          - Windows 10 or later
-          - .NET Framework (automatically installed with installer version)
-          
-        files: |
-          installer/*.exe
-          Excella_Portable_${{ github.ref_name }}.zip
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: excella-installer
+          path: installer/
+
+      - name: Download executable artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: excella-executable
+          path: executable/
+
+      - name: Create ZIP of portable executable
+        run: Compress-Archive -Path "executable\*" -DestinationPath "Excella_Portable_${{ github.ref_name }}.zip"
+
+      - name: Get release info
+        id: release_info
+        run: |
+          echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          $inst = Get-ChildItem "installer\*.exe" | Select-Object -First 1
+          echo "installer_name=$($inst.Name)" >> $GITHUB_OUTPUT
+          echo "installer_path=$($inst.FullName)" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_info.outputs.tag }}
+          name: Excella ${{ steps.release_info.outputs.version }}
+          draft: false
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+          body: |
+            ## Excella ${{ steps.release_info.outputs.version }}
+            - **Installer**: ${{ steps.release_info.outputs.installer_name }}
+            - **Portable**: Excella_Portable_${{ github.ref_name }}.zip
+          files: |
+            installer/*.exe
+            Excella_Portable_${{ github.ref_name }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   test-installer:
     needs: build-installer
-    runs-on: windows-latest
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
-    
+    runs-on: windows-latest
     steps:
-    - name: Download installer artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: excella-installer
-        path: installer/
-        
-    - name: Test installer (silent install/uninstall)
-      run: |
-        $installer = Get-ChildItem "installer\*.exe" | Select-Object -First 1
-        if ($installer) {
-          Write-Host "Testing installer: $($installer.Name)"
-          
-          # Test silent installation
-          Start-Process -FilePath $installer.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=$env:TEMP\ExcellaTest" -Wait
-          
-          # Check if installation was successful
-          if (Test-Path "$env:TEMP\ExcellaTest\Excella.exe") {
-            Write-Host "✓ Installation successful"
-            
-            # Test uninstallation
+      - name: Download installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: excella-installer
+          path: installer/
+
+      - name: Test installer (silent install/uninstall)
+        run: |
+          $installer = Get-ChildItem "installer\*.exe" | Select-Object -First 1
+          if ($installer) {
+            Start-Process -FilePath $installer.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/DIR=$env:TEMP\ExcellaTest" -Wait
+            if (-not (Test-Path "$env:TEMP\ExcellaTest\Excella.exe")) { exit 1 }
             $uninstaller = "$env:TEMP\ExcellaTest\unins000.exe"
             if (Test-Path $uninstaller) {
-              Start-Process -FilePath $uninstaller -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
-              Write-Host "✓ Uninstallation completed"
+              Start-Process -FilePath $uninstaller -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait
             }
           } else {
-            Write-Host "✗ Installation failed"
             exit 1
           }
-        } else {
-          Write-Host "✗ No installer found"
-          exit 1
-        }
