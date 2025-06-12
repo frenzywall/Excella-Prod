@@ -44,7 +44,7 @@ jobs:
       - name: Build executable
         run: |
           if (Test-Path "build_single_bat.bat") {
-            .\build_single_bat.bat
+            .\build_single_bat.bat onedir
           } else {
             Write-Host "build_single_bat.bat not found, running pyinstaller directly"
             pyinstaller --onefile --windowed --name Excella main.py
