@@ -31,7 +31,7 @@ DEPENDENCY_VERSIONS = {
     "packaging": ">=23.2",  # <-- Added packaging
 }
 
-# Dependency details for UI
+# Dependency details for UI.
 DEPENDENCY_INFO = [
     {"name": "pandas", "import": "pandas", "required": True, "desc": "Data manipulation and analysis", "version": DEPENDENCY_VERSIONS["pandas"]},
     {"name": "openpyxl", "import": "openpyxl", "required": True, "desc": "Read/write .xlsx/.xlsm files", "version": DEPENDENCY_VERSIONS["openpyxl"]},

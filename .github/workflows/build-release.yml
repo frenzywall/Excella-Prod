@@ -134,6 +134,13 @@ jobs:
           name: excella-executable
           path: dist/Excella/
 
+      - name: Set installer version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag.TrimStart("v")
+          (Get-Content excella_setup.iss) -replace '(#define MyAppVersion\s+)"[^"]+"', "`$1`"$version`"" | Set-Content excella_setup.iss
+
       - name: Install Inno Setup
         run: |
           $url = "https://files.jrsoftware.org/is/6/innosetup-6.3.3.exe"
