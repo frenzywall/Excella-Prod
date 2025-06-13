@@ -9,7 +9,7 @@ echo.
 :: Check if build mode is passed
 if "%~1"=="" (
     echo [ERROR] Build mode not specified.
-    echo Usage: build_exe.bat [onedir | onefile]
+    echo Usage: build_exe.bat [onedir ^| onefile]
     exit /b 1
 )
 
@@ -29,28 +29,67 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
-:: Install dependencies
-echo [INFO] Installing required Python packages...
-pip install -r requirements.txt >nul 2>&1
-pip install pyinstaller >nul 2>&1
+:: Check if dependencies are already installed to avoid reinstalling
+echo [INFO] Checking dependencies...
+python -c "import PyInstaller" >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo [INFO] Installing PyInstaller...
+    pip install pyinstaller --quiet --disable-pip-version-check
+) else (
+    echo [INFO] PyInstaller already installed, skipping...
+)
 
-:: Clean previous build
+:: Check requirements.txt dependencies
+if exist requirements.txt (
+    echo [INFO] Installing requirements...
+    pip install -r requirements.txt --quiet --disable-pip-version-check --upgrade-strategy only-if-needed
+) else (
+    echo [INFO] No requirements.txt found, skipping...
+)
+
+:: Clean previous build (only if they exist)
 echo [INFO] Cleaning previous build directories...
-if exist build rmdir /s /q build
-if exist dist rmdir /s /q dist
-if exist __pycache__ rmdir /s /q __pycache__
+if exist build (
+    echo [INFO] Removing build directory...
+    rmdir /s /q build
+)
+if exist dist (
+    echo [INFO] Removing dist directory...
+    rmdir /s /q dist
+)
+for /d %%i in (*__pycache__*) do rmdir /s /q "%%i" 2>nul
 if exist Excella.spec del /q Excella.spec
 
-:: Set PyInstaller flags.
-set BUILD_FLAGS=--noconfirm --windowed --icon=icon.ico --name="Excella" --add-data="icon.ico;."
+:: Check if icon exists before adding it
+set ICON_FLAG=
+if exist icon.ico (
+    set ICON_FLAG=--icon=icon.ico --add-data="icon.ico;."
+    echo [INFO] Using icon.ico
+) else (
+    echo [INFO] No icon.ico found, building without icon
+)
 
+:: Set PyInstaller flags with performance optimizations
+set BUILD_FLAGS=--noconfirm --windowed --name="Excella" !ICON_FLAG! --noupx --exclude-module=tkinter --exclude-module=matplotlib --clean
+
+:: Add onefile flag if specified
 if /I "%BUILD_TYPE%"=="onefile" (
     set BUILD_FLAGS=!BUILD_FLAGS! --onefile
 )
 
-:: Build with PyInstaller
-echo [INFO] Building executable in %BUILD_TYPE% mode...
-python -m PyInstaller !BUILD_FLAGS! app.py
+:: Check if spec file exists from previous run to enable incremental builds
+if exist Excella.spec (
+    echo [INFO] Using existing spec file for faster incremental build...
+    python -m PyInstaller Excella.spec --noconfirm
+) else (
+    echo [INFO] Building executable in %BUILD_TYPE% mode...
+    python -m PyInstaller !BUILD_FLAGS! app.py
+)
+
+if %ERRORLEVEL% NEQ 0 (
+    echo [ERROR] Build failed!
+    exit /b 1
+)
 
 echo.
 echo ================================================
@@ -61,4 +100,5 @@ if /I "%BUILD_TYPE%"=="onedir" (
     echo Check dist\Excella.exe for the final executable.
 )
 echo ================================================
+echo [INFO] Build completed at %DATE% %TIME%
 pause
