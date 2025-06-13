@@ -176,7 +176,7 @@ def check_package_installed(pkg_name, import_name=None, version_spec=None):
             elif op == '<':
                 return packaging_version.parse(installed_version) < packaging_version.parse(required_version)
             elif op == '~=':
-                # Compatible release, e.g., ~=1.4 means >=1.4, ==1.*
+                # Compatible release, e.g., ~=1.4 means >=1.4, ==1.*k
                 return packaging_version.parse(installed_version) >= packaging_version.parse(required_version)
             else:
                 return True  # Unknown operator, fallback to True
