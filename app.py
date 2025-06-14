@@ -1929,7 +1929,7 @@ class ExcelComparisonTool:
                                             'data_value': fuzzy_match.iloc[0].get(data_source, "")
                                         }
                     
-                    # Update replace columns based on individual matches
+                    # Update replace columns based on individual matchess
                     if matches_found:
                         # Update each replace column based on its corresponding target column
                         for target_idx, match_info in matches_found.items():
