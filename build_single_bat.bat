@@ -70,7 +70,7 @@ if exist icon.ico (
 )
 
 :: Set PyInstaller flags with performance optimizations
-set BUILD_FLAGS=--noconfirm --windowed --name="Excella" !ICON_FLAG! --noupx --exclude-module=tkinter --exclude-module=matplotlib --clean
+set BUILD_FLAGS=--noconfirm --windowed --name="Excella" !ICON_FLAG! --noupx --exclude-module=matplotlib --clean
 
 :: Add onefile flag if specified
 if /I "%BUILD_TYPE%"=="onefile" (
