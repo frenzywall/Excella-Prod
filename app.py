@@ -268,7 +268,7 @@ class ExcelComparisonTool:
         header_frame.columnconfigure(1, weight=1)
         
         ttk.Label(header_frame, text="Dependencies", font=("Arial", 12, "bold")).grid(row=0, column=0, sticky=tk.W)
-        current_version = "1.0.3"  # Should match the version in check_for_updates method
+        current_version = "1.0.0"  # Should match the version in check_for_updates method
         ttk.Label(header_frame, text=f"Version: {current_version}", font=("Arial", 9), foreground="blue").grid(row=0, column=1, sticky=tk.E)
         
         # Different message for frozen vs non-frozen environment
@@ -2206,8 +2206,8 @@ class ExcelComparisonTool:
     def check_for_updates(self):
         """Check for new releases on GitHub"""
         try:
-            # Current version (should match the version in excella_setup.iss)
-            current_version = "1.0.3"  # Update this when you release new versions
+            # Current version (should match the version in excella_setup.iss).
+            current_version = "1.0.0"  # Update this when you release new versions
             
             # Log the update check
             self.log_message("Checking for updates...", "INFO")
