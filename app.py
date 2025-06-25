@@ -580,7 +580,7 @@ class ExcelComparisonTool:
             self.dependency_install_btn.config(state=tk.DISABLED)
             self.dependency_text.config(state=tk.NORMAL)
             self.dependency_text.delete(1.0, tk.END)
-            self.dependency_text.insert(tk.END, "All dependencies are satisfied. You can use the application.")
+            self.dependency_text.insert(tk.END, "It’s all working. Probably. Hit run and hope.")
             self.dependency_text.config(state=tk.DISABLED)
 
     def setup_mapping_tab(self, parent):
@@ -2200,6 +2200,8 @@ def main():
     # Make sure buttons are always visible with a minimum width
     style.configure("TButton", padding=5)
     app = ExcelComparisonTool(root)
+        # Copyright disclaimer
+    app.log_message("© 2025 Excella - Excel Comparison Tool. Author: frenzywall. All rights reserved.", "INFO")
     
     # Display system info for debugging
     is_frozen = getattr(sys, 'frozen', False)
