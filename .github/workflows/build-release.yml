@@ -140,7 +140,6 @@ jobs:
           $tag = "${{ github.ref_name }}"
           $version = $tag.TrimStart("v")
           (Get-Content excella_setup.iss) -replace '(#define MyAppVersion\s+)"[^"]+"', "`$1`"$version`"" | Set-Content excella_setup.iss
-          (Get-Content app.py) -replace '(current_version\s*=\s*)"[^"]+"', "`$1`"$version`"" | Set-Content app.py
 
       - name: Install Inno Setup
         run: |
