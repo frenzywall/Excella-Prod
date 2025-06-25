@@ -1,5 +1,5 @@
 #define MyAppName "Excella"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.1"
 #define MyAppPublisher "frenzywall"
 #define MyAppURL "https://github.com/frenzywall/Excella"
 #define MyAppExeName "Excella.exe"

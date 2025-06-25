@@ -14,6 +14,10 @@ from difflib import get_close_matches
 import threading
 import odf
 from functools import lru_cache
+import json
+import urllib.request
+import urllib.error
+from packaging import version as packaging_version
 try:
     from importlib import metadata as importlib_metadata
 except ImportError:
@@ -257,7 +261,15 @@ class ExcelComparisonTool:
     def setup_dependency_tab(self, parent):
         parent.columnconfigure(0, weight=1)
         parent.rowconfigure(3, weight=1)
-        ttk.Label(parent, text="Dependencies", font=("Arial", 12, "bold")).grid(row=0, column=0, sticky=tk.W, pady=(10, 5), padx=10)
+        
+        # Header with version info
+        header_frame = ttk.Frame(parent)
+        header_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(10, 5), padx=10)
+        header_frame.columnconfigure(1, weight=1)
+        
+        ttk.Label(header_frame, text="Dependencies", font=("Arial", 12, "bold")).grid(row=0, column=0, sticky=tk.W)
+        current_version = "1.0.1"  # Should match the version in check_for_updates method
+        ttk.Label(header_frame, text=f"Version: {current_version}", font=("Arial", 9), foreground="blue").grid(row=0, column=1, sticky=tk.E)
         
         # Different message for frozen vs non-frozen environment
         if getattr(sys, 'frozen', False):
@@ -580,7 +592,7 @@ class ExcelComparisonTool:
             self.dependency_install_btn.config(state=tk.DISABLED)
             self.dependency_text.config(state=tk.NORMAL)
             self.dependency_text.delete(1.0, tk.END)
-            self.dependency_text.insert(tk.END, "It’s all working. Probably. Hit run and hope.")
+            self.dependency_text.insert(tk.END, "It's all working. Probably. Hit run and hope.")
             self.dependency_text.config(state=tk.DISABLED)
 
     def setup_mapping_tab(self, parent):
@@ -840,7 +852,8 @@ class ExcelComparisonTool:
         results_header.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), padx=5, pady=(10, 0))
         results_header.columnconfigure(0, weight=1)
         ttk.Label(results_header, text="Results & Log", font=("Arial", 10, "bold")).grid(row=0, column=0, sticky=tk.W)
-        ttk.Button(results_header, text="Clear Log", command=self.clear_logs, width=10).grid(row=0, column=1, sticky=tk.E, padx=(0, 2))
+        ttk.Button(results_header, text="Check for Updates", command=self.check_for_updates, width=15).grid(row=0, column=1, sticky=tk.E, padx=(0, 5))
+        ttk.Button(results_header, text="Clear Log", command=self.clear_logs, width=10).grid(row=0, column=2, sticky=tk.E, padx=(0, 2))
         # --- Log area below header ---
         results_frame = ttk.Frame(parent, padding="0")
         results_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), padx=5)
@@ -2190,6 +2203,173 @@ class ExcelComparisonTool:
         # Optionally, show a warning message
         messagebox.showwarning("Bypass Activated", "Dependency check bypassed. Please ensure all required packages are installed for full functionality.")
 
+    def check_for_updates(self):
+        """Check for new releases on GitHub"""
+        try:
+            # Current version (should match the version in excella_setup.iss)
+            current_version = "1.0.1"  # Update this when you release new versions
+            
+            # Log the update check
+            self.log_message("Checking for updates...", "INFO")
+            
+            # GitHub API URL for releases
+            api_url = "https://api.github.com/repos/frenzywall/Excella-Prod/releases/latest"
+            
+            # Create a request with a user agent to avoid being blocked
+            req = urllib.request.Request(
+                api_url,
+                headers={
+                    'User-Agent': 'Excella-Update-Checker/1.0'
+                }
+            )
+            
+            # Make the request
+            with urllib.request.urlopen(req, timeout=10) as response:
+                release_data = json.loads(response.read().decode())
+                
+                # Extract version from tag name (remove 'v' prefix if present)
+                latest_version = release_data['tag_name']
+                if latest_version.startswith('v'):
+                    latest_version = latest_version[1:]
+                
+                self.log_message(f"Latest version available: {latest_version}", "INFO")
+                
+                # Compare versions
+                if packaging_version.parse(latest_version) > packaging_version.parse(current_version):
+                    # New version available
+                    release_url = release_data['html_url']
+                    release_notes = release_data.get('body', 'No release notes available.')
+                    
+                    # Truncate release notes if too long
+                    if len(release_notes) > 500:
+                        release_notes = release_notes[:500] + "..."
+                    
+                    # Show update notification
+                    self.show_update_notification(latest_version, release_url, release_notes)
+                else:
+                    self.log_message("You are running the latest version!", "INFO")
+                    
+        except urllib.error.URLError as e:
+            # Network error - log but don't show to user
+            self.log_message(f"Update check failed (network): {str(e)}", "DEBUG")
+        except urllib.error.HTTPError as e:
+            # HTTP error - log but don't show to user
+            self.log_message(f"Update check failed (HTTP {e.code}): {str(e)}", "DEBUG")
+        except Exception as e:
+            # Other errors - log but don't show to user
+            self.log_message(f"Update check failed: {str(e)}", "DEBUG")
+
+    def show_update_notification(self, latest_version, release_url, release_notes):
+        """Show update notification dialog"""
+        # Create a custom dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Update Available")
+        dialog.geometry("500x400")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.resizable(True, True)
+        
+        # Center the dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (500 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (400 // 2)
+        dialog.geometry(f"500x400+{x}+{y}")
+        
+        # Main frame
+        main_frame = ttk.Frame(dialog, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        main_frame.columnconfigure(0, weight=1)
+        main_frame.rowconfigure(2, weight=1)
+        
+        # Title
+        title_label = ttk.Label(
+            main_frame, 
+            text="🎉 New Version Available!", 
+            font=("Arial", 14, "bold"),
+            foreground="green"
+        )
+        title_label.grid(row=0, column=0, sticky=tk.W, pady=(0, 10))
+        
+        # Version info
+        version_frame = ttk.Frame(main_frame)
+        version_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 15))
+        version_frame.columnconfigure(1, weight=1)
+        
+        ttk.Label(version_frame, text="Latest version:", font=("Arial", 10, "bold")).grid(row=0, column=0, sticky=tk.W)
+        ttk.Label(version_frame, text=f"v{latest_version}", font=("Arial", 10), foreground="blue").grid(row=0, column=1, sticky=tk.W, padx=(10, 0))
+        
+        # Release notes
+        ttk.Label(main_frame, text="What's new:", font=("Arial", 10, "bold")).grid(row=2, column=0, sticky=(tk.W, tk.N), pady=(0, 5))
+        
+        notes_frame = ttk.Frame(main_frame)
+        notes_frame.grid(row=3, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 15))
+        notes_frame.columnconfigure(0, weight=1)
+        notes_frame.rowconfigure(0, weight=1)
+        
+        # Scrollable text for release notes
+        notes_scroll = ttk.Scrollbar(notes_frame, orient=tk.VERTICAL)
+        notes_text = tk.Text(notes_frame, height=8, wrap=tk.WORD, yscrollcommand=notes_scroll.set)
+        notes_scroll.config(command=notes_text.yview)
+        
+        notes_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        notes_scroll.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        
+        # Insert release notes
+        notes_text.insert(tk.END, release_notes)
+        notes_text.config(state=tk.DISABLED)
+        
+        # Buttons frame
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=(10, 0))
+        button_frame.columnconfigure(0, weight=1)
+        button_frame.columnconfigure(1, weight=1)
+        button_frame.columnconfigure(2, weight=1)
+        
+        # Download button
+        def download_update():
+            import webbrowser
+            webbrowser.open(release_url)
+            dialog.destroy()
+        
+        download_btn = ttk.Button(
+            button_frame, 
+            text="Download Now", 
+            command=download_update,
+            style="Accent.TButton"
+        )
+        download_btn.grid(row=0, column=0, padx=(0, 5))
+        
+        # Remind later button
+        def remind_later():
+            dialog.destroy()
+        
+        remind_btn = ttk.Button(
+            button_frame, 
+            text="Remind Later", 
+            command=remind_later
+        )
+        remind_btn.grid(row=0, column=1, padx=5)
+        
+        # Skip this version button
+        def skip_version():
+            dialog.destroy()
+        
+        skip_btn = ttk.Button(
+            button_frame, 
+            text="Skip This Version", 
+            command=skip_version
+        )
+        skip_btn.grid(row=0, column=2, padx=(5, 0))
+        
+        # Focus on download button
+        download_btn.focus_set()
+        
+        # Bind Enter key to download
+        dialog.bind('<Return>', lambda e: download_update())
+        
+        # Make dialog modal
+        dialog.wait_window()
+
 def main():
     root = tk.Tk()
     # Set theme
@@ -2227,6 +2407,15 @@ def main():
         app.log_message("COM interface support is available for Enterprise Excel files", "INFO")
     else:
         app.log_message("COM interface not available. Install pywin32 for better Enterprise Excel support", "INFO")
+    
+    # Check for updates in the background after a short delay
+    def check_updates_delayed():
+        # Wait a bit for the GUI to fully load
+        root.after(2000, app.check_for_updates)
+    
+    # Start update check in a separate thread to avoid blocking the GUI
+    update_thread = threading.Thread(target=check_updates_delayed, daemon=True)
+    update_thread.start()
     
     root.mainloop()
 
