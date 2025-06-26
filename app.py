@@ -9,19 +9,88 @@ import traceback
 from pathlib import Path
 import importlib.util
 import warnings
-import re 
-from difflib import get_close_matches
+import re
+from difflib import get_close_matches, SequenceMatcher
 import threading
 import odf
 from functools import lru_cache
 import json
 import urllib.request
 import urllib.error
-from packaging import version as packaging_version
 try:
     from importlib import metadata as importlib_metadata
 except ImportError:
     import importlib_metadata  # type: ignore
+
+# ============================================================================
+# APPLICATION CONSTANTS AND CONFIGURATION
+# ============================================================================
+
+# Version information
+APP_VERSION = "1.0.0"
+APP_NAME = "Excella"
+APP_AUTHOR = "frenzywall"
+APP_COPYRIGHT = f"© 2025 {APP_NAME} - Excel Comparison Tool. Author: {APP_AUTHOR}. All rights reserved."
+
+# UI Configuration
+DEFAULT_WINDOW_SIZE = "1000x700"
+DEFAULT_FONT_FAMILY = "Arial"
+DEFAULT_FONT_SIZES = {
+    "large": 14,
+    "medium": 12,
+    "normal": 10,
+    "small": 9,
+    "tiny": 8
+}
+
+# Colors
+COLORS = {
+    "success": "green",
+    "error": "red", 
+    "info": "blue",
+    "warning": "orange"
+}
+
+# Log Levels
+LOG_LEVELS = {
+    "INFO": "INFO",
+    "WARNING": "WARNING", 
+    "ERROR": "ERROR",
+    "DEBUG": "DEBUG"
+}
+
+# File paths and directories
+TEMP_DIR_NAME = "temp_excel_files"
+ENTERPRISE_NAME = "your company name"
+ONEDRIVE_PATHS = [
+    "OneDrive",
+    f"OneDrive - {ENTERPRISE_NAME}"
+]
+
+# Excel file signatures
+EXCEL_SIGNATURES = {
+    "xlsx": b'PK\x03\x04',  # XLSX files are ZIP files
+    "xls": b'\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1'  # XLS files
+}
+
+# Common delimiters for multi-value processing
+COMMON_DELIMITERS = [',', ';', '|']
+
+# Column name keywords for auto-detection
+NAME_KEYWORDS = ['name', 'naam', 'full name', 'fullname', 'participant']
+ID_KEYWORDS = ['id', 'signum', 'employee id', 'emp id', 'userid', 'user id']
+
+# GitHub API configuration
+GITHUB_API_URL = "https://api.github.com/repos/frenzywall/Excella-Prod/releases/latest"
+USER_AGENT = "Excella-Update-Checker/1.0"
+
+# Core packages for frozen executable detection
+CORE_PACKAGES = ["pandas", "openpyxl", "xlrd", "packaging"]
+
+# ============================================================================
+# DEPENDENCY CONFIGURATION
+# ============================================================================
+
 DEPENDENCY_VERSIONS = {
     "pandas": ">=2.2.3",
     "openpyxl": ">=3.1.4",
@@ -134,6 +203,7 @@ def get_missing_optional_dependencies():
     missing = [name for name, flag in OPTIONAL_DEPENDENCIES if not flag]
     return missing
 
+@lru_cache(maxsize=128)
 def check_package_installed(pkg_name, import_name=None, version_spec=None):
     # If running as a frozen executable, consider core packages as installed
     if getattr(sys, 'frozen', False):
@@ -190,11 +260,38 @@ def check_package_installed(pkg_name, import_name=None, version_spec=None):
         # If we can't get version but we know the package is present, consider it installed
         return True
 
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
 class ExcelComparisonTool:
     def __init__(self, root):
         self.root = root
-        self.root.title("Excella")
-        self.root.geometry("1000x700")
+        self.root.withdraw()
+        self.root.iconbitmap(resource_path('icon.ico'))
+        self.root.title(APP_NAME)
+        # Set fullscreen/maximized before showing window
+        system = platform.system()
+        if system == 'Windows':
+            self.root.state('zoomed')
+        elif system == 'Linux':
+            try:
+                self.root.attributes('-zoomed', True)
+            except tk.TclError:
+                self.root.state('normal')
+        elif system == 'Darwin':  # macOS
+            try:
+                self.root.attributes('-fullscreen', True)
+            except tk.TclError:
+                self.root.state('normal')
+        else:
+            self.root.state('normal')
+        self.root.deiconify()
+        self.root.geometry(DEFAULT_WINDOW_SIZE)
         
         # Set to open in full screen by default, cross-platform
         system = platform.system()
@@ -267,15 +364,15 @@ class ExcelComparisonTool:
         header_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(10, 5), padx=10)
         header_frame.columnconfigure(1, weight=1)
         
-        ttk.Label(header_frame, text="Dependencies", font=("Arial", 12, "bold")).grid(row=0, column=0, sticky=tk.W)
-        current_version = "1.0.0"  # Should match the version in check_for_updates method
-        ttk.Label(header_frame, text=f"Version: {current_version}", font=("Arial", 9), foreground="blue").grid(row=0, column=1, sticky=tk.E)
+        ttk.Label(header_frame, text="Dependencies", font=(DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZES["medium"], "bold")).grid(row=0, column=0, sticky=tk.W)
+        current_version = APP_VERSION  # Should match the version in check_for_updates method
+        ttk.Label(header_frame, text=f"Version: {current_version}", font=(DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZES["small"]), foreground=COLORS["info"]).grid(row=0, column=1, sticky=tk.E)
         
         # Different message for frozen vs non-frozen environment
         if getattr(sys, 'frozen', False):
-            ttk.Label(parent, text="This is a packaged application with all dependencies included.\nNo installation is required.", font=("Arial", 9)).grid(row=1, column=0, sticky=tk.W, padx=10)
+            ttk.Label(parent, text="This is a packaged application with all dependencies included.\nNo installation is required.", font=(DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZES["small"])).grid(row=1, column=0, sticky=tk.W, padx=10)
         else:
-            ttk.Label(parent, text="Below is a list of required and optional dependencies for this tool.\nSelect any to install, or use Install All for all missing dependencies.", font=("Arial", 9)).grid(row=1, column=0, sticky=tk.W, padx=10)
+            ttk.Label(parent, text="Below is a list of required and optional dependencies for this tool.\nSelect any to install, or use Install All for all missing dependencies.", font=(DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZES["small"])).grid(row=1, column=0, sticky=tk.W, padx=10)
 
         # Dependency grid with checkboxes
         grid_frame = ttk.Frame(parent)
@@ -288,7 +385,7 @@ class ExcelComparisonTool:
 
         headers = ["Select", "Package", "Required", "Purpose", "Status"]
         for col, header in enumerate(headers):
-            ttk.Label(grid_frame, text=header, font=("Arial", 10, "bold")).grid(row=0, column=col, sticky=tk.W, padx=2, pady=2)
+            ttk.Label(grid_frame, text=header, font=(DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZES["normal"], "bold")).grid(row=0, column=col, sticky=tk.W, padx=2, pady=2)
 
         self.dep_vars = []
         self.dep_labels = []
@@ -297,7 +394,7 @@ class ExcelComparisonTool:
             self.dep_vars.append(var)
             installed = check_package_installed(dep["name"], dep.get("import"), dep.get("version"))
             status = "Installed" if installed else "Missing"
-            color = "green" if installed else "red"
+            color = COLORS["success"] if installed else COLORS["error"]
             # Checkbox
             cb = ttk.Checkbutton(grid_frame, variable=var)
             cb.grid(row=i+1, column=0, sticky=tk.W, padx=2)
@@ -324,9 +421,9 @@ class ExcelComparisonTool:
         legend_frame = ttk.Frame(parent)
         legend_frame.grid(row=3, column=0, sticky=tk.W, padx=10, pady=(0, 5))
         ttk.Label(legend_frame, text="Legend:").pack(side=tk.LEFT)
-        ttk.Label(legend_frame, text="  ", foreground="green").pack(side=tk.LEFT)
+        ttk.Label(legend_frame, text="  ", foreground=COLORS["success"]).pack(side=tk.LEFT)
         ttk.Label(legend_frame, text="Installed  ").pack(side=tk.LEFT)
-        ttk.Label(legend_frame, text="  ", foreground="red").pack(side=tk.LEFT)
+        ttk.Label(legend_frame, text="  ", foreground=COLORS["error"]).pack(side=tk.LEFT)
         ttk.Label(legend_frame, text="Missing").pack(side=tk.LEFT)
 
         # Buttons
@@ -359,7 +456,7 @@ class ExcelComparisonTool:
         # If running as a frozen executable, mark all dependencies as installed
         if getattr(sys, 'frozen', False):
             for i, dep in enumerate(DEPENDENCY_INFO):
-                color = "green"
+                color = COLORS["success"]
                 self.dep_labels[i][0].config(foreground=color)  # pkg
                 self.dep_labels[i][1].config(foreground=color)  # req
                 self.dep_labels[i][2].config(foreground=color)  # purpose
@@ -371,7 +468,7 @@ class ExcelComparisonTool:
         # Normal dependency check for non-frozen environment
         for i, dep in enumerate(DEPENDENCY_INFO):
             installed = check_package_installed(dep["name"], dep.get("import"), dep.get("version"))
-            color = "green" if installed else "red"
+            color = COLORS["success"] if installed else COLORS["error"]
             self.dep_labels[i][0].config(foreground=color)  # pkg
             self.dep_labels[i][1].config(foreground=color)  # req
             self.dep_labels[i][2].config(foreground=color)  # purpose
@@ -400,7 +497,6 @@ class ExcelComparisonTool:
         self._install_dependencies(missing)
 
     def _install_dependencies(self, dep_list):
-        # Check if running as a frozen executable
         if getattr(sys, 'frozen', False):
             self.dependency_text.config(state=tk.NORMAL)
             self.dependency_text.delete(1.0, tk.END)
@@ -413,8 +509,7 @@ class ExcelComparisonTool:
                                "This is a packaged application with all dependencies included.\n\n"
                                "No need to install additional packages.")
             return
-            
-        # Normal installation process for non-frozen environment
+
         self.dependency_install_btn.config(state=tk.DISABLED)
         self.dependency_selected_btn.config(state=tk.DISABLED)
         self.dependency_text.config(state=tk.NORMAL)
@@ -423,6 +518,7 @@ class ExcelComparisonTool:
         self.dependency_text.see(tk.END)
         self.dependency_text.update_idletasks()
         self.root.update_idletasks()
+
         def run_install():
             for dep in dep_list:
                 self.dependency_text.insert(tk.END, f"Installing {dep}...\n")
@@ -441,7 +537,6 @@ class ExcelComparisonTool:
                     process.wait()
                     if process.returncode == 0:
                         self.dependency_text.insert(tk.END, f"{dep} installed successfully.\n\n")
-                        # If pywin32, run post-install script
                         if dep.startswith("pywin32"):
                             self.dependency_text.insert(tk.END, "Running pywin32_postinstall...\n")
                             self.dependency_text.see(tk.END)
@@ -473,7 +568,6 @@ class ExcelComparisonTool:
             self.dependency_install_btn.config(state=tk.NORMAL)
             self.dependency_selected_btn.config(state=tk.NORMAL)
             messagebox.showinfo("Restart Required", "Dependencies installed. Please restart the application.")
-        import threading
         threading.Thread(target=run_install, daemon=True).start()
 
     def uninstall_installed_dependencies(self):
@@ -493,7 +587,6 @@ class ExcelComparisonTool:
         self._uninstall_dependencies(installed)
 
     def _uninstall_dependencies(self, dep_list):
-        # Check if running as a frozen executable
         if getattr(sys, 'frozen', False):
             self.dependency_text.config(state=tk.NORMAL)
             self.dependency_text.delete(1.0, tk.END)
@@ -506,8 +599,7 @@ class ExcelComparisonTool:
                                "This is a packaged application with embedded dependencies.\n\n"
                                "Dependencies cannot be uninstalled from the executable.")
             return
-            
-        # Normal uninstallation process for non-frozen environment
+
         self.dependency_uninstall_btn.config(state=tk.DISABLED)
         self.dependency_install_btn.config(state=tk.DISABLED)
         self.dependency_selected_btn.config(state=tk.DISABLED)
@@ -517,6 +609,7 @@ class ExcelComparisonTool:
         self.dependency_text.see(tk.END)
         self.dependency_text.update_idletasks()
         self.root.update_idletasks()
+
         def run_uninstall():
             for dep in dep_list:
                 self.dependency_text.insert(tk.END, f"Uninstalling {dep}...\n")
@@ -551,7 +644,6 @@ class ExcelComparisonTool:
             self.dependency_install_btn.config(state=tk.NORMAL)
             self.dependency_selected_btn.config(state=tk.NORMAL)
             messagebox.showinfo("Uninstall Complete", "Dependencies uninstalled. Please reinstall them to use the application.")
-        import threading
         threading.Thread(target=run_uninstall, daemon=True).start()
 
     def check_and_handle_dependencies(self):
@@ -713,8 +805,7 @@ class ExcelComparisonTool:
         target_frame.rowconfigure(0, weight=1)
         
         target_scroll = ttk.Scrollbar(target_frame, orient=tk.VERTICAL)
-        self.target_listbox = tk.Listbox(target_frame, height=5, font=("Arial", 8), 
-                                         yscrollcommand=target_scroll.set)
+        self.target_listbox = tk.Listbox(target_frame, height=5, font=(DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZES["tiny"]), yscrollcommand=target_scroll.set)
         target_scroll.config(command=self.target_listbox.yview)
         self.target_listbox.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         target_scroll.grid(row=0, column=1, sticky=(tk.N, tk.S))
@@ -727,8 +818,7 @@ class ExcelComparisonTool:
         replace_frame.rowconfigure(0, weight=1)
         
         replace_scroll = ttk.Scrollbar(replace_frame, orient=tk.VERTICAL)
-        self.replace_listbox = tk.Listbox(replace_frame, height=5, font=("Arial", 8),
-                                          yscrollcommand=replace_scroll.set)
+        self.replace_listbox = tk.Listbox(replace_frame, height=5, font=(DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZES["tiny"]), yscrollcommand=replace_scroll.set)
         replace_scroll.config(command=self.replace_listbox.yview)
         self.replace_listbox.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         replace_scroll.grid(row=0, column=1, sticky=(tk.N, tk.S))
@@ -1738,17 +1828,20 @@ class ExcelComparisonTool:
         
         def on_select():
             nonlocal selected_sheet
-            selection = sheet_listbox.curselection()
+            selection = sheet_tree.selection()
             if selection:
-                selected_sheet = sheet_names[selection[0]]
+                item = selection[0]
+                children = sheet_tree.get_children()
+                index = children.index(item)
+                selected_sheet = sheet_names[index]
                 dialog.destroy()
         
         ttk.Label(dialog, text="Select a sheet:").pack(pady=10)
         
-        sheet_listbox = tk.Listbox(dialog)
+        sheet_tree = ttk.Treeview(dialog, show="tree")
         for sheet in sheet_names:
-            sheet_listbox.insert(tk.END, sheet)
-        sheet_listbox.pack(pady=10, padx=20, fill=tk.BOTH, expand=True)
+            sheet_tree.insert('', 'end', values=(sheet,))
+        sheet_tree.pack(pady=10, padx=20, fill=tk.BOTH, expand=True)
         
         button_frame = ttk.Frame(dialog)
         button_frame.pack(pady=10)
@@ -1756,7 +1849,9 @@ class ExcelComparisonTool:
         ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
         
         # Select first sheet by default
-        sheet_listbox.selection_set(0)
+        first_item = sheet_tree.get_children()[0] if sheet_tree.get_children() else None
+        if first_item:
+            sheet_tree.selection_set(first_item)
         
         dialog.wait_window()
         return selected_sheet
@@ -1773,6 +1868,15 @@ class ExcelComparisonTool:
             self.target_primary_combo['values'] = secondary_cols
             self.target_additional_combo['values'] = secondary_cols
             self.target_replace_combo['values'] = secondary_cols
+
+    def clean_name_series(self, series):
+        return (
+            series.astype(str)
+            .str.strip()
+            .str.replace(r'\s+', ' ', regex=True)
+            .str.lower()
+            .str.replace(r'[^\w\s\-]', '', regex=True)
+        )
 
     def process_data(self):
         """Process and match data between files using advanced mapping"""
@@ -1811,12 +1915,12 @@ class ExcelComparisonTool:
             master_work = self.master_df.copy()
             self.secondary_work = self.secondary_df.copy()
             
-            # Clean names for comparison
-            master_work['clean_reference'] = master_work[reference_primary].apply(self.clean_name)
+            # Clean names for comparison (vectorized)
+            master_work['clean_reference'] = self.clean_name_series(master_work[reference_primary])
             
-            # Clean target columns for comparison
+            # Clean target columns for comparison (vectorized)
             for i, target_col in enumerate(self.selected_target_columns):
-                self.secondary_work[f'clean_target_{i}'] = self.secondary_work[target_col].apply(self.clean_name)
+                self.secondary_work[f'clean_target_{i}'] = self.clean_name_series(self.secondary_work[target_col])
             
             # Statistics
             exact_matches = 0
@@ -2207,19 +2311,19 @@ class ExcelComparisonTool:
         """Check for new releases on GitHub"""
         try:
             # Current version (should match the version in excella_setup.iss).
-            current_version = "1.0.0"  # Update this when you release new versions
+            current_version = APP_VERSION  # Update this when you release new versions
             
             # Log the update check
-            self.log_message("Checking for updates...", "INFO")
+            self.log_message("Checking for updates...", LOG_LEVELS["INFO"])
             
             # GitHub API URL for releases
-            api_url = "https://api.github.com/repos/frenzywall/Excella-Prod/releases/latest"
+            api_url = GITHUB_API_URL
             
             # Create a request with a user agent to avoid being blocked
             req = urllib.request.Request(
                 api_url,
                 headers={
-                    'User-Agent': 'Excella-Update-Checker/1.0'
+                    'User-Agent': USER_AGENT
                 }
             )
             
@@ -2232,7 +2336,7 @@ class ExcelComparisonTool:
                 if latest_version.startswith('v'):
                     latest_version = latest_version[1:]
                 
-                self.log_message(f"Latest version available: {latest_version}", "INFO")
+                self.log_message(f"Latest version available: {latest_version}", LOG_LEVELS["INFO"])
                 
                 # Compare versions
                 if packaging_version.parse(latest_version) > packaging_version.parse(current_version):
@@ -2247,17 +2351,17 @@ class ExcelComparisonTool:
                     # Show update notification
                     self.show_update_notification(latest_version, release_url, release_notes)
                 else:
-                    self.log_message("You are running the latest version!", "INFO")
+                    self.log_message("You are running the latest version!", LOG_LEVELS["INFO"])
                     
         except urllib.error.URLError as e:
             # Network error - log but don't show to user
-            self.log_message(f"Update check failed (network): {str(e)}", "DEBUG")
+            self.log_message(f"Update check failed (network): {str(e)}", LOG_LEVELS["DEBUG"])
         except urllib.error.HTTPError as e:
             # HTTP error - log but don't show to user
-            self.log_message(f"Update check failed (HTTP {e.code}): {str(e)}", "DEBUG")
+            self.log_message(f"Update check failed (HTTP {e.code}): {str(e)}", LOG_LEVELS["DEBUG"])
         except Exception as e:
             # Other errors - log but don't show to user
-            self.log_message(f"Update check failed: {str(e)}", "DEBUG")
+            self.log_message(f"Update check failed: {str(e)}", LOG_LEVELS["DEBUG"])
 
     def show_update_notification(self, latest_version, release_url, release_notes):
         """Show update notification dialog"""
@@ -2376,12 +2480,12 @@ def main():
     style = ttk.Style()
     style.theme_use('clam')
     # Create accent button style
-    style.configure("Accent.TButton", font=("Arial", 10, "bold"))
+    style.configure("Accent.TButton", font=(DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZES["normal"], "bold"))
     # Make sure buttons are always visible with a minimum width
     style.configure("TButton", padding=5)
     app = ExcelComparisonTool(root)
         # Copyright disclaimer
-    app.log_message("© 2025 Excella - Excel Comparison Tool. Author: frenzywall. All rights reserved.", "INFO")
+    app.log_message(APP_COPYRIGHT, LOG_LEVELS["INFO"])
     
     # Display system info for debugging
     is_frozen = getattr(sys, 'frozen', False)
@@ -2389,7 +2493,7 @@ def main():
     # When running as executable, force pandas version display
     if is_frozen:
         pandas_version = pd.__version__
-        app.log_message("Running as packaged executable", "INFO")
+        app.log_message("Running as packaged executable", LOG_LEVELS["INFO"])
     elif HAS_PANDAS:
         try:
             pandas_version = pd.__version__
@@ -2401,12 +2505,12 @@ def main():
     platform_info = f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}, " \
                     f"Platform: {platform.system()} {platform.version()}, " \
                     f"Pandas: {pandas_version}"
-    app.log_message(f"System info: {platform_info}", "INFO")
+    app.log_message(f"System info: {platform_info}", LOG_LEVELS["INFO"])
     
     if is_frozen or HAS_WIN32COM:
-        app.log_message("COM interface support is available for Enterprise Excel files", "INFO")
+        app.log_message("COM interface support is available for Enterprise Excel files", LOG_LEVELS["INFO"])
     else:
-        app.log_message("COM interface not available. Install pywin32 for better Enterprise Excel support", "INFO")
+        app.log_message("COM interface not available. Install pywin32 for better Enterprise Excel support", LOG_LEVELS["INFO"])
     
     # Check for updates in the background after a short delay
     def check_updates_delayed():
