@@ -43,7 +43,7 @@ DEFAULT_FONT_SIZES = {
     "tiny": 8
 }
 
-# Colors
+# Colors.
 COLORS = {
     "success": "green",
     "error": "red", 
