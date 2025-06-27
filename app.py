@@ -2310,6 +2310,9 @@ class ExcelComparisonTool:
     def check_for_updates(self):
         """Check for new releases on GitHub"""
         try:
+            # Import packaging.version for version comparison
+            from packaging import version as packaging_version
+            
             # Current version (should match the version in excella_setup.iss).
             current_version = APP_VERSION  # Update this when you release new versions
             
