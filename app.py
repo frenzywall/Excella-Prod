@@ -27,7 +27,7 @@ except ImportError:
 # ============================================================================
 
 # Version information
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 APP_NAME = "Excella"
 APP_AUTHOR = "frenzywall"
 APP_COPYRIGHT = f"© 2025 {APP_NAME} - Excel Comparison Tool. Author: {APP_AUTHOR}. All rights reserved."
