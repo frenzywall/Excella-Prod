@@ -325,7 +325,8 @@ class ExcelComparisonTool:
         self.setup_gui()
         # After GUI setup, check for missing dependencies
         self.check_and_handle_dependencies()
-        
+        self.setup_shortcuts()
+
     def setup_gui(self):
         # Main frame
         main_frame = ttk.Frame(self.root, padding="10")
@@ -709,7 +710,7 @@ class ExcelComparisonTool:
         ttk.Button(file_frame, text="Browse", command=self.browse_secondary_file, width=8).grid(row=1, column=2)
         
         # Load files button on the same row to save space
-        ttk.Button(file_frame, text="Load Files", command=self.load_files, width=12).grid(
+        ttk.Button(file_frame, text="Load Files (Ctrl+O)", command=self.load_files, width=12).grid(
             row=0, column=3, rowspan=2, padx=(10, 0), pady=5)
         
         # Improved Column Mapping section - with more vertical space available
@@ -721,7 +722,7 @@ class ExcelComparisonTool:
         results_header.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(8, 0), padx=2)
         results_header.columnconfigure(0, weight=1)
         ttk.Label(results_header, text="Results & Log", font=("Arial", 10, "bold")).grid(row=0, column=0, sticky=tk.W)
-        ttk.Button(results_header, text="Clear Log", command=self.clear_logs, width=10).grid(row=0, column=1, sticky=tk.E, padx=(0, 2))
+        ttk.Button(results_header, text="Clear Log (Ctrl+L)", command=self.clear_logs, width=10).grid(row=0, column=1, sticky=tk.E, padx=(0, 2))
         # --- Log area below header ---
         results_frame = ttk.Frame(parent, padding="0")
         results_frame.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), padx=5)
@@ -914,8 +915,8 @@ class ExcelComparisonTool:
         process_export_frame = ttk.LabelFrame(parent, text="Processing & Export", padding="10")
         process_export_frame.grid(row=1, column=1, sticky=(tk.W, tk.E, tk.N, tk.S), padx=5, pady=5)
         process_export_frame.columnconfigure(0, weight=1)
-        ttk.Button(process_export_frame, text="Process & Match Data", command=self.process_data, style="Accent.TButton", width=22).grid(row=0, column=0, pady=(0, 8), sticky=tk.EW)
-        ttk.Button(process_export_frame, text="Export Results to Excel/CSV", command=self.export_results, width=22).grid(row=1, column=0, pady=(0, 2), sticky=tk.EW)
+        ttk.Button(process_export_frame, text="Process & Match Data (Ctrl+P)", command=self.process_data, style="Accent.TButton", width=22).grid(row=0, column=0, pady=(0, 8), sticky=tk.EW)
+        ttk.Button(process_export_frame, text="Export Results to Excel/CSV (Ctrl+E)", command=self.export_results, width=22).grid(row=1, column=0, pady=(0, 2), sticky=tk.EW)
 
         # --- Move: Replace Column Values Section above log ---
         replace_col_frame = ttk.LabelFrame(parent, text="Replace Entire Column in Processed Target File", padding="10")
@@ -942,8 +943,8 @@ class ExcelComparisonTool:
         results_header.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), padx=5, pady=(10, 0))
         results_header.columnconfigure(0, weight=1)
         ttk.Label(results_header, text="Results & Log", font=("Arial", 10, "bold")).grid(row=0, column=0, sticky=tk.W)
-        ttk.Button(results_header, text="Check for Updates", command=self.check_for_updates, width=15).grid(row=0, column=1, sticky=tk.E, padx=(0, 5))
-        ttk.Button(results_header, text="Clear Log", command=self.clear_logs, width=10).grid(row=0, column=2, sticky=tk.E, padx=(0, 2))
+        ttk.Button(results_header, text="Check for Updates (Ctrl+U)", command=self.check_for_updates, width=15).grid(row=0, column=1, sticky=tk.E, padx=(0, 5))
+        ttk.Button(results_header, text="Clear Log (Ctrl+L)", command=self.clear_logs, width=10).grid(row=0, column=2, sticky=tk.E, padx=(0, 2))
         # --- Log area below header ---
         results_frame = ttk.Frame(parent, padding="0")
         results_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), padx=5)
@@ -1519,7 +1520,7 @@ class ExcelComparisonTool:
                     # Inform user they may need to restart
                     messagebox.showinfo(
                         "Restart Recommended",
-                        "Dependencies were installed successfully.\n"
+                                               "Dependencies were installed successfully.\n"
                         "It's recommended to restart the application for changes to take effect."
                     )
                 except Exception as e:
@@ -1876,6 +1877,7 @@ class ExcelComparisonTool:
             .str.replace(r'\s+', ' ', regex=True)
             .str.lower()
             .str.replace(r'[^\w\s\-]', '', regex=True)
+            .str.strip()  # Additional strip after cleaning
         )
 
     def process_data(self):
@@ -1963,7 +1965,12 @@ class ExcelComparisonTool:
                             
                             # Process multi-value if we found a delimiter
                             if actual_delimiter:
-                                target_values = [val.strip() for val in target_str.split(actual_delimiter) if val.strip()]
+                                # Clean each value by stripping spaces before and after delimiter
+                                target_values = []
+                                for val in target_str.split(actual_delimiter):
+                                    cleaned_val = val.strip()
+                                    if cleaned_val:  # Only add non-empty values
+                                        target_values.append(cleaned_val)
                                 
                                 if len(target_values) > 1:
                                     self.log_message(f"Processing multi-value field with delimiter '{actual_delimiter}': {target_values}")
@@ -1972,6 +1979,8 @@ class ExcelComparisonTool:
                                     matched_results = []
                                     match_types = []
                                     for target_val in target_values:
+                                        # Additional cleaning to ensure no spaces affect matching
+                                        target_val = target_val.strip()
                                         match_result = self.find_match_for_value(target_val, master_work, reference_primary, data_source)
                                         if match_result:
                                             matched_results.append(match_result['data_value'])
@@ -1983,8 +1992,13 @@ class ExcelComparisonTool:
                                             self.log_message(f"  '{target_val}' not matched")
                                     
                                     if matched_results:
-                                        # Use the same delimiter that was found in the original data
-                                        combined_data_value = actual_delimiter.join(matched_results)
+                                        # Use the same delimiter that was found in the original data, with proper spacing
+                                        if actual_delimiter == ',':
+                                            combined_data_value = ', '.join(matched_results)  # Add space after comma
+                                        elif actual_delimiter == ';':
+                                            combined_data_value = '; '.join(matched_results)  # Add space after semicolon
+                                        else:
+                                            combined_data_value = actual_delimiter.join(matched_results)  # Keep original for other delimiters
                                         
                                         # Determine overall match type
                                         has_exact = "EXACT" in match_types
@@ -2150,7 +2164,7 @@ class ExcelComparisonTool:
         name = re.sub(r'\s+', ' ', name).lower()
         # Remove special characters except spaces and hyphens
         name = re.sub(r'[^\w\s\-]', '', name)
-        return name
+        return name.strip()  # Final strip to ensure no leading/trailing spaces
 
     def export_results(self):
         """Export results to Excel file"""
@@ -2477,6 +2491,15 @@ class ExcelComparisonTool:
         # Make dialog modal
         dialog.wait_window()
 
+    def setup_shortcuts(self):
+        """Bind global keyboard shortcuts"""
+        self.root.bind_all('<Control-o>', lambda e: self.load_files())
+        self.root.bind_all('<Control-l>', lambda e: self.clear_logs())
+        self.root.bind_all('<Control-p>', lambda e: self.process_data())
+        self.root.bind_all('<Control-e>', lambda e: self.export_results())
+        self.root.bind_all('<Control-u>', lambda e: self.check_for_updates())
+        self.root.bind_all('<Control-q>', lambda e: self.root.quit())
+
 def main():
     root = tk.Tk()
     # Set theme
@@ -2518,7 +2541,7 @@ def main():
     # Check for updates in the background after a short delay
     def check_updates_delayed():
         # Wait a bit for the GUI to fully load
-        root.after(2000, app.check_for_updates)
+        root.after(6000, app.check_for_updates)
     
     # Start update check in a separate thread to avoid blocking the GUI
     update_thread = threading.Thread(target=check_updates_delayed, daemon=True)
@@ -2529,4 +2552,3 @@ def main():
 if __name__ == "__main__":
     main()
 
-    
